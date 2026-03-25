@@ -1,3 +1,4 @@
 .ipynb_checkpoints/
 .venv/
 chunk_cache/
+snakemake_analysis
