@@ -1,7 +1,7 @@
 # New functionality for getting partial result
 
 ## def split_fileset(...)
-The implementation can be found [here](https://github.com/hooloobooroodkoo/coffea/blob/split_strategy/src/coffea/util.py#L72-L91)
+The implementation can be found under coffea.dataset_tools [here](https://github.com/hooloobooroodkoo/coffea/blob/processor_result_type/src/coffea/dataset_tools/splitting.py#L30-L55)
 
 ### Description of function
 
@@ -34,8 +34,8 @@ def split_fileset(fileset, strategy=None, datasets=None, percentage=None):
 ```
 ### How to run
 
-If you want to run split_fileset function alone use the [branch `split_strategy`](https://github.com/hooloobooroodkoo/coffea/tree/split_strategy) \
-with `example_split_simple.ipynb`:
+If you want to run split_fileset function alone use the [branch `processor_result_type`](https://github.com/hooloobooroodkoo/coffea/tree/processor_result_type) \
+with `example_split_all.ipynb`:
 
 ```python
 # concept example
@@ -52,10 +52,40 @@ for chunk in chunks:
         print(f"Error: {e}")
         continue
 ```
+
+To collect partial results, the better practice would be to check whether the chunk (partial result of a subset of a fileset) was processed successfully or not, instead of writing try-except Python logic. If the user wants the `processor.Runner` to return `Result` type output (as `Ok(Accumulatable)` if successfully processed or `Err(Exception)` if failed), then flag `use_result_type` in `processor.Runner` should be marked as `True`:
+
+```python
+run = processor.Runner(executor=executor,
+                        schema=schemas.NanoAODSchema,
+                        savemetrics=True,
+                        use_result_type=True
+                      )
+```
+Then the analysis implementation will look the following way:
+
+```python
+# concept example
+chunks = split_fileset(fileset, strategy="by_dataset", percentage=20)
+result = None
+for chunk in chunks:
+    run_result = run(chunk, processor_instance=Processor())
+    if run_result.is_ok():
+        output, metrics = run_result.unwrap()
+    else:
+        # user can implement their own logic on how to treat failed chunks
+        print(f"Error processing chunk...")
+        continue
+    if result is None:
+        result = output
+    else:
+        result += output
+```
+
 ---
 
 ## def hash_fileset(...)
-The implementation can be found [here](https://github.com/hooloobooroodkoo/coffea/blob/split_strategy/src/coffea/util.py#L53-L69), same branch `split_strategy`.
+The implementation can be found [here](https://github.com/hooloobooroodkoo/coffea/blob/processor_result_type/src/coffea/dataset_tools/splitting.py#L11-L21).
 
 ### Description of function
 
@@ -73,8 +103,6 @@ def hash_fileset(chunk):
     """
 ```
 ### How to run
-If you want to run split_fileset and preserve partial result in Jupyter Notebook use this [branch](https://github.com/hooloobooroodkoo/coffea/tree/split_strategy) \
-with `example_split_cache.ipynb`:
 
 ```python
 # concept example
@@ -86,44 +114,8 @@ result = None
 cache_dir = "./chunk_cache"
 os.makedirs(cache_dir, exist_ok=True)
 ```
-After the first run, partial result will be saved. Then user can just rerun the same cell and partial result will be extracted from cache, while processor run will be only applied to missing chunks.
+After the first run, the partial result will be saved. Then the user can just rerun the same cell and partial result will be extracted from cache, while processor run will be only applied to missing chunks.
 ```python
-for chunk in chunks:
-    chunk_hash = hash_fileset(chunk)
-    cache_path = os.path.join(cache_dir, f"{chunk_hash}.coffea")
-
-    if os.path.exists(cache_path):
-        print(f"Loading cached result for chunk {chunk_hash}")
-        output = load(cache_path)
-    else:
-        try:
-            output, metrics = run(chunk, processor_instance=Processor())
-            save(output, cache_path)
-            print(f"Saved result for chunk {chunk_hash}")
-        except BaseException as e:
-            print(f"Error processing chunk {chunk_hash}: {e}")
-            continue
-
-    if result is None:
-        result = output
-    else:
-        result += output
-```
----
-
-## class Result()
-The implementation can be found [here](https://github.com/hooloobooroodkoo/coffea/blob/processor_result_type/src/coffea/util.py#L53C1-L63C8). It's a different branch called `processor_result_type`. \
-proccessor.Runner always returns Result object (either Ok(Accumulatable) or Err(Exception)). Then analysis can be written in the following way - without \
-catching and avoiding of Exception(s) but with the user being able to decide what to do with the chunk that failed to be processed.
-```python
-import os
-
-result = None
-cache_dir = "./chunk_cache"
-os.makedirs(cache_dir, exist_ok=True)
-```
-```python
-# percentage=20, 5 mixed chunks: 1st chunk is 20% of SingleMu_0 + 20% of SingleMu_1 ...
 for chunk in chunks:
     chunk_hash = hash_fileset(chunk)
     cache_path = os.path.join(cache_dir, f"{chunk_hash}.coffea")
@@ -139,7 +131,7 @@ for chunk in chunks:
             print(f"Saved result for chunk {chunk_hash}")
         else:
             # user can implement their own logic on how to treat failed chunks
-            print(f"Error processing chunk {chunk_hash}: {run_result.exception}")
+            print(f"Error processing chunk...")
             continue
 
     if result is None:
@@ -147,6 +139,12 @@ for chunk in chunks:
     else:
         result += output
 ```
+---
+
+## class Result()
+The implementation can be found [here](https://github.com/hooloobooroodkoo/coffea/blob/processor_result_type/src/coffea/processor/result.py). \
+`proccessor.Runner` can now return Result object (either Ok(Accumulatable) or Err(Exception)). Then the analysis can be written in the following way - without \
+catching and avoiding of Exception(s) but with the user being able to decide what to do with the chunk that failed to be processed.
 
 ### Description of Result, Ok, Err
 
